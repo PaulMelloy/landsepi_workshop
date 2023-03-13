@@ -1,0 +1,23 @@
+---
+title: "01_TestNotes"
+author: "Dr. Paul Melloy"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup}
+library(landsepi)
+# set initialisation directory
+simul_params <- createSimulParams(outputDir = "../sims/")
+```
+
+```{r set_params}
+# set times
+simul_params <- setTime(params = simul_params, 
+                        Nyears = 10, 
+                        nTSpY = 180)
+
+# set pathogen
+basic_patho_param <- loadPathogen(disease = "rust")
+```
+
