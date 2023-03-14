@@ -331,6 +331,7 @@ cat("here\n")
 
   sim_par2 <-
     eventReactive(input$set_rotation ,{
+      cat("start_check")
     aggreg <- vector(mode = "list",
                      length = length(crop_seq1))
     aggreg[1:length(crop_seq1())] <- 0.2
@@ -343,9 +344,10 @@ cat("here\n")
           aggreg = aggreg,
           graphic = TRUE
         )
-    cat("check1")
+    cat("end_check")
     sim_params
   })
+  observe(sim_par2())
 
   # Run simulation
   observeEvent(input$run_sim ,{
@@ -358,7 +360,7 @@ cat("here\n")
     checkSimulParams(simulation_pars)
     simulation_pars <- saveDeploymentStrategy(simulation_pars)
 
-    sim <- runSimul(simul_params, graphic = TRUE, videoMP4 = FALSE)
+    sim <- runSimul(simulation_pars, graphic = TRUE, videoMP4 = FALSE)
 
     cat("end")
   })
