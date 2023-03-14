@@ -1,12 +1,13 @@
 library(shiny)
 library(landsepi)
+library(DT)
 source("../R/rolling_vec.R")
 simul_params <- createSimulParams(outputDir = "../sims/")
 # Define UI for application that draws a histogram
 ui <- fluidPage(
 
     # Application title
-    titlePanel("Old Faithful Geyser Data"),
+    titlePanel("Landsepi workshop UQ"),
 
     # Sidebar with a slider input for number of bins
     sidebarLayout(
@@ -63,16 +64,19 @@ ui <- fluidPage(
           p("cropID number, seperated by a comma ',' no spaces "),
           textInput("crop_seq",
                     "Cropping sequence",
-                    "4,3,3,5,6")
+                    "5,3,3,5,6"),
+          actionButton(inputId = "set_rotation",
+                       label = "Set Final Parameters"),
+          actionButton(inputId = "run_sim",
+                       label = "Run simulation")
         ),
 
-        # Show a plot of the generated distribution
         mainPanel(
-           #textOutput(outputId = "dir"),
-           dataTableOutput("cultivar_types"),
-           textOutput(outputId = "rotation_text")
+          h2("Main Panel") ,
+          #textOutput(outputId = "dir"),
+           dataTableOutput("cultivar_types")
         )
-    )
+)
 )
 
 # Define server logic required to draw a histogram
@@ -91,27 +95,18 @@ server <- function(input, output) {
     # })
 
   # Prepare parameters
-  sim_par <-
-    eventReactive(input$set_params,{
 
+  sim_par <-
+    reactive({
+cat("here\n")
     simul_params <- setTime(simul_params,
                             Nyears = input$Nyears,
                             nTSpY = input$season)
     # pathogen
-    basic_patho_param <- list(infection_rate = 0.4,
-                              latent_period_mean = input$latent_per,
-                              latent_period_var = 9,
-                              propagule_prod_rate = 3.125,
-                              infectious_period_mean = input$infectious_per,
-                              infectious_period_var = 105,
-                              survival_prob = 1e-4,
-                              repro_sex_prob = 0,
-                              sigmoid_kappa = 5.333,
-                              sigmoid_sigma = 3,
-                              sigmoid_plateau = 1,
-                              sex_propagule_viability_limit = 1,
-                              sex_propagule_release_mean = 1,
-                              clonal_propagule_gradual_release = 0)
+    basic_patho_param <- loadPathogen(disease = "rust")
+    basic_patho_param$latent_period_mean <- input$latent_per
+    basic_patho_param$infectious_period_mean <- input$infectious_per
+
     simul_params <- setPathogen(simul_params, patho_params = basic_patho_param)
     simul_params <- setInoculum(simul_params, val = 5e-4)
 
@@ -165,22 +160,22 @@ server <- function(input, output) {
     gene3.1 <- loadGene(name = "QTL 1", type = "QTL")
     gene3.1$time_to_activ_mean <- 10
     gene3.1$time_to_activ_var <- 10
-    gene3.1$mutation_prob <- 1e12
+    gene3.1$mutation_prob <- 1e-12
     gene3.1$efficiency <- 0.4
     gene3.2 <- loadGene(name = "QTL 2", type = "QTL")
     gene3.2$time_to_activ_mean <- 1
     gene3.2$time_to_activ_var <- 10
-    gene3.2$mutation_prob <- 1e12
+    gene3.2$mutation_prob <- 1e-12
     gene3.2$efficiency <- 0.2
     gene3.3 <- loadGene(name = "QTL 3", type = "QTL")
     gene3.3$time_to_activ_mean <- 10
     gene3.3$time_to_activ_var <- 10
-    gene3.3$mutation_prob <- 1e12
+    gene3.3$mutation_prob <- 1e-12
     gene3.3$efficiency <- 0.1
     gene3.4 <- loadGene(name = "QTL 4", type = "QTL")
     gene3.4$time_to_activ_mean <- 20
     gene3.4$time_to_activ_var <- 10
-    gene3.4$mutation_prob <- 1e12
+    gene3.4$mutation_prob <- 1e-12
     gene3.4$efficiency <- 0.65
 
     gene4 <- loadGene(name = "nonhost resistance", type = "immunity")
@@ -283,12 +278,21 @@ server <- function(input, output) {
                                            cultivarsInCroptype = c("UnManaged_Fallow","Managed_Fallow"),
                                            prop = c(0.3,0.7))
 
-    simul_params <- setCroptypes(simul_params, dfCroptypes = croptypes)
 
+
+    simul_params <- setCroptypes(simul_params, dfCroptypes = croptypes)
     simul_params
+
+
   })
 
-  output$cultivar_types <- renderDataTable(DT::datatable(sim_par()@Croptypes[,1:4]))
+
+  ct_df <-
+    eventReactive(input$set_params,{
+      DT::datatable(sim_par()@Croptypes[,1:2])
+      })
+  output$cultivar_types <- renderDataTable(ct_df())
+
 
   # observeEvent(input$cultivar_types_rows_selected,{
   # #   output$rotation_text <- renderText("cultivar_types_rows_selected")
@@ -296,22 +300,72 @@ server <- function(input, output) {
   # })
 
   # convert crop sequence to a numeric vector
-  crop_seq1 <- reactive(as.numeric(unlist(strsplit(input$crop_seq))))
+  crop_seq1 <- reactive(as.numeric(unlist(strsplit(input$crop_seq, ","))))
+
+  rotation_ind <- reactive({
+    sample(seq_along(crop_seq1()),
+           replace = FALSE,
+           size = length(crop_seq1())
+  )})
+
   rotation_seq <- reactive({
-    rand_ind <-
-      sample(
-        seq_along(crop_seq1()),
-        replace = FALSE,
-        size = length(crop_seq1())
-      )
     lapply(seq_along(crop_seq1()), function(x) {
       # Forest_prop, pasture_prop, cropping_prop
-      c1 <- rolling_vec(crop_seq1(),x)[rand_ind]
+      c1 <- rolling_vec(crop_seq1(),x)[rotation_ind()]
       c(0, 1, c1)
     })
   })
 
-cat("end")
+  # proportion in surface
+  prop <- reactive({
+    lapply(crop_seq1(),function(x2){
+      props <- c(input$p_forest,
+        input$p_pasture,
+        rep(input$p_cropping/length(crop_seq1()),
+            length(crop_seq1())))
+
+      if(sum(props)!= 1)stop("proportions don't sum to 1")
+      return(props)
+    })
+  })
+
+  sim_par2 <-
+    eventReactive(input$set_rotation ,{
+    aggreg <- vector(mode = "list",
+                     length = length(crop_seq1))
+    aggreg[1:length(crop_seq1())] <- 0.2
+    sim_params <-
+        allocateLandscapeCroptypes(
+          sim_par(),
+          rotation_period = 1,
+          rotation_sequence = rotation_seq(),
+          prop = prop(),
+          aggreg = aggreg,
+          graphic = TRUE
+        )
+    cat("check1")
+    sim_params
+  })
+
+  # Run simulation
+  observeEvent(input$run_sim ,{
+    # specify outputs
+    outputlist <- loadOutputs(epid_outputs = c("audpc_rel","gla_rel", "eco_yield"), evol_outputs = "all")
+
+    #update sim_par
+    simulation_pars <- setOutputs(sim_par2(), outputlist)
+
+    checkSimulParams(simulation_pars)
+    simulation_pars <- saveDeploymentStrategy(simulation_pars)
+
+    sim <- runSimul(simul_params, graphic = TRUE, videoMP4 = FALSE)
+
+    cat("end")
+  })
+
+
+
+
 
 }
 
