@@ -11,13 +11,156 @@ library(landsepi)
 simul_params <- createSimulParams(outputDir = "../sims/")
 ```
 
+
+## Set time  
+
 ```{r set_params}
 # set times
 simul_params <- setTime(params = simul_params, 
                         Nyears = 10, 
                         nTSpY = 180)
+```
+
+## Set pathogen  
+
+```{r}
+# load pathogen
+basic_patho_param <- loadPathogen(disease = "rust")
+
+# set infection rate
+basic_patho_param$infection_rate <- 0.5
 
 # set pathogen
-basic_patho_param <- loadPathogen(disease = "rust")
+simul_params <- setPathogen(simul_params, patho_params = basic_patho_param)
+```
+
+### Set inoculum  
+
+```{r}
+# set inoculum
+simul_params <- setInoculum(simul_params, val = 5e-4) 
+```
+
+## Set landscape  
+
+```{r}
+# load landscape 2
+landscape <- loadLandscape(id = 2)
+plot(landscape, main = "Landscape structure")
+
+# load the dispersal matrix for landscape 2
+disp_patho_clonal <- loadDispersalPathogen(id = 2)[[1]]
+
+# set landscape and dispersal
+simul_params <- setLandscape(simul_params, land = landscape)
+simul_params <- setDispersalPathogen(simul_params, disp_patho_clonal)
+```
+
+## Load and Set cultivars  
+
+```{r}
+# load Cultivars
+cultivar1 <- loadCultivar(name = "Susceptible", type = "growingHost")
+cultivar2 <- loadCultivar(name = "Resistant1", type = "growingHost")
+cultivar3 <- loadCultivar(name = "Resistant2", type = "growingHost")
+cultivar4 <- loadCultivar(name = "Resistant3", type = "nongrowingHost")
+cultivar5 <- loadCultivar(name = "Forest", type = "nonCrop")
+cultivars <- data.frame(rbind(cultivar1, cultivar2, cultivar3, cultivar4, cultivar5)
+                        , stringsAsFactors = FALSE)
+
+# update cultivar growth rate
+cultivars[cultivars$cultivarName == "Susceptible", "growth_rate"] <- 0.2
+
+# load cultivar resistance genes
+gene1 <- loadGene(name = "MG 1", type = "majorGene")
+gene2 <- loadGene(name = "Lr34", type = "APR")
+gene3 <- loadGene(name = "gene 3", type = "QTL")
+gene4 <- loadGene(name = "nonhost resistance", type = "immunity")
+genes <- data.frame(rbind(gene1, gene2, gene3, gene4), stringsAsFactors = FALSE)
+
+# set genes and cultivars to parameters
+simul_params <- setGenes(simul_params, dfGenes = genes)
+simul_params <- setCultivars(simul_params, dfCultivars = cultivars)
+
+# Allocate genes to cultivars
+simul_params <- allocateCultivarGenes(simul_params
+                                      , cultivarName = "Resistant1"
+                                      , listGenesNames = c("MG 1"))
+simul_params <- allocateCultivarGenes(simul_params
+                                      , cultivarName = "Resistant2"
+                                      , listGenesNames = c("Lr34", "gene 3"))
+simul_params <- allocateCultivarGenes(simul_params
+                                      , cultivarName = "Resistant3"
+                                      , listGenesNames = c("nonhost resistance"))
+```
+
+## Characterise croptypes  
+
+Set the type of crop grown monoculture or polyculture  
+
+```{r}
+croptypes <- loadCroptypes(simul_params, names = c("Susceptible crop"
+                                                   , "Pure resistant crop"
+                                                   , "Mixture"
+                                                   , "Other"))
+
+croptypes <- allocateCroptypeCultivars(croptypes
+                                       , croptypeName = "Susceptible crop"
+                                       , cultivarsInCroptype = "Susceptible")
+croptypes <- allocateCroptypeCultivars(croptypes
+                                       , croptypeName = "Pure resistant crop"
+                                       , cultivarsInCroptype = "Resistant1")
+croptypes <- allocateCroptypeCultivars(croptypes
+                                       , croptypeName = "Mixture"
+                                       , cultivarsInCroptype = c("Resistant2","Resistant3")
+                                       , prop = c(0.4, 0.6))
+croptypes <- allocateCroptypeCultivars(croptypes
+                                       , croptypeName = "Other"
+                                       , cultivarsInCroptype = "Forest")
+
+# set the croptypes
+simul_params <- setCroptypes(simul_params, dfCroptypes = croptypes)
+```
+
+
+## Define crop rotations in simulation  
+
+```{r}
+rotation_sequence <- list(c(0,1,3), c(0,2,3))
+rotation_period <- 2  # number of years before rotation of the landscape
+prop <- list(rep(1/3, 3), rep(1/3, 3)) # proportion (in surface) of each croptype 
+aggreg <-1 # level of spatial aggregation
+simul_params <- allocateLandscapeCroptypes(simul_params
+                                           , rotation_period = rotation_period
+                                           , rotation_sequence = rotation_sequence
+                                           , prop = prop
+                                           , aggreg = aggreg
+                                           , graphic = TRUE)
+```
+
+## define model outputs
+
+```{r}
+outputlist <- loadOutputs(epid_outputs = "all", evol_outputs = "all")
+```
+
+## Run the simulation
+
+```{r}
+checkSimulParams(simul_params)
+simul_params <- saveDeploymentStrategy(simul_params)
+test_sim <- runSimul(simul_params, graphic = TRUE, videoMP4 = FALSE)
+
+audpc100 <- compute_audpc100S()
+
+library(sf)
+sim1<- st_layers("../sims/simul_landsepi_2023-03-15_13-09-20/landsepi_landscape.gpkg")
+summary(sim1)
+sim1$name
+
+
+class(sim1)
+plot(st_geometry(sim1))
+head(sim1)
 ```
 
